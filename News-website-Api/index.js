@@ -9,8 +9,13 @@ const userRoutes = require("./Routes/UserRoute");
 const app = express();
 app.use(bodyParser.json());
 
-// Enable CORS for all routes
-app.use(cors());
+// Define CORS options to allow requests from specific origins
+const corsOptions = {
+  origin: 'http://localhost:5173'
+};
+
+// Enable CORS with specific options
+app.use(cors(corsOptions));
 
 const PORT = process.env.PORT || 3001;
 

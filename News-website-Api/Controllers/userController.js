@@ -2,7 +2,9 @@ const { signAccessTocken, signRefreshToken } = require("../Helpers/jwt_helper");
 const createError = require('http-errors');
 const User = require("../Models/user");
 const { authSchema } = require("../auth/auth_schema");
-
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+const knex = require('knex');
 module.exports = {
   registerUser: async (req, res, next) => {
     try {
@@ -117,6 +119,88 @@ module.exports = {
       res.status(200).send(user);
     } catch (error) {
       console.log(error.message);
+      next(error);
+    }
+  },
+  forgotPassword: async (req, res, next) => {
+    try {
+      const { email } = req.body;
+      const user = await User.findUserByEmail(email);
+      if (!user) throw createError.NotFound('User not found');
+
+      const resetToken = crypto.randomBytes(20).toString('hex');
+      user.resetPasswordToken = resetToken;
+      user.resetPasswordExpires = Date.now() + 3600000; // Token valid for 1 hour
+
+      await knex('users')
+        .where('email', email)
+        .update({ resetPasswordToken: resetToken, resetPasswordExpires: user.resetPasswordExpires });
+
+      // Send password reset email
+      const transporter = nodemailer.createTransport({
+        service: 'Gmail',
+        auth: {
+          user: 'kurerelagat01@gmail.com', // Your Gmail email address
+          pass: '@KurereLagat01' // Your Gmail password
+        }
+      });
+
+      const mailOptions = {
+        from: 'your-email@gmail.com',
+        to: email,
+        subject: 'Password Reset',
+        text: `You are receiving this email because you (or someone else) have requested the reset of the password for your account.\n\n` +
+          `Please click on the following link, or paste this into your browser to complete the process:\n\n` +
+          `http://localhost:5173/reset-password/${resetToken}\n\n` +
+          `If you did not request this, please ignore this email and your password will remain unchanged.\n`
+      };
+
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          console.log(error);
+          throw createError.InternalServerError('Error sending email');
+        } else {
+          console.log('Email sent: ' + info.response);
+          res.status(200).json({ message: 'Password reset email sent' });
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+  
+  resetPassword: async (req, res, next) => {
+    try {
+      const { resetToken } = req.params;
+      const { newPassword, confirmPassword } = req.body;
+
+      // Check if passwords match
+      if (newPassword !== confirmPassword) {
+        throw createError.BadRequest('Passwords do not match');
+      }
+
+      // Find user by reset token
+      const user = await knex('users')
+        .where('resetPasswordToken', resetToken)
+        .where('resetPasswordExpires', '>', Date.now())
+        .first();
+
+      // If no user found or reset token expired
+      if (!user) {
+        throw createError.BadRequest('Invalid or expired reset token');
+      }
+
+      // Hash the new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update user's password and clear reset token fields
+      await knex('users')
+        .where('id', user.id)
+        .update({ password: hashedPassword, resetPasswordToken: null, resetPasswordExpires: null });
+
+      // Respond with success message
+      res.status(200).json({ message: 'Password reset successful' });
+    } catch (error) {
       next(error);
     }
   }

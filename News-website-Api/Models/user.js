@@ -1,21 +1,13 @@
-const mysql = require('mysql');
 const bcrypt = require('bcrypt');
-
-// MySQL database connection configuration
-const connection = mysql.createConnection({
-  host: 'localhost',
-  port: '3307',
-  user: 'root',
-  password: '',
-  database: 'laravelvue'
-});
-
-connection.connect((err) => {
-  if (err) {
-    console.error('Error connecting to MySQL database:', err);
-    return;
+const knex = require('knex')({
+  client: 'mysql',
+  connection: {
+    host: 'localhost',
+    port: '3307',
+    user: 'root',
+    password: '',
+    database: 'laravelvue'
   }
-  console.log('Connected to MySQL database');
 });
 
 // Function to hash the password using bcrypt
@@ -27,39 +19,24 @@ const hashPassword = async (password) => {
 // Define the User model object
 const User = {
   // Function to create a new user
-  createUser: (name, email, password) => {
-    return new Promise((resolve, reject) => {
-      hashPassword(password)
-        .then((hashedPwd) => {
-          const query = 'INSERT INTO users (name, email, password) VALUES (?, ?, ?)';
-          connection.query(query, [name, email, hashedPwd], (err, result) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(result.insertId);
-          });
-        })
-        .catch((err) => reject(err));
-    });
+  createUser: async (name, email, password) => {
+    try {
+      const hashedPwd = await hashPassword(password);
+      const userId = await knex('users').insert({ name, email, password: hashedPwd });
+      return userId[0];
+    } catch (error) {
+      throw error;
+    }
   },
 
   // Function to find a user by email
-  findUserByEmail: (email) => {
-    return new Promise((resolve, reject) => {
-      const query = 'SELECT * FROM users WHERE email = ?';
-      connection.query(query, [email], (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        if (results.length === 0) {
-          resolve(null); // User not found
-          return;
-        }
-        resolve(results[0]); // Return the first user found
-      });
-    });
+  findUserByEmail: async (email) => {
+    try {
+      const user = await knex('users').where('email', email).first();
+      return user;
+    } catch (error) {
+      throw error;
+    }
   },
 
   // Function to compare password
